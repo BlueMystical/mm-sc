@@ -1,0 +1,34 @@
+# Blueprint de Render: un solo servicio (API + cliente) en el plan gratuito
+services:
+  - type: web
+    name: mm-sc
+    runtime: node
+    plan: free
+    # --include=dev: con NODE_ENV=production npm omitiría vite y el build fallaría
+    buildCommand: cd client && npm ci --include=dev && npm run build && cd ../server && npm ci
+    startCommand: cd server && npm run start:prod
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      # Valores secretos: se piden en el panel de Render (no van al repo)
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      # https://TU-SERVICIO.onrender.com (sin barra final)
+      - key: CLIENT_ORIGIN
+        sync: false
+      # https://TU-SERVICIO.onrender.com/api/auth/discord/callback
+      - key: DISCORD_REDIRECT_URI
+        sync: false
+      - key: UEX_API_TOKEN
+        sync: false

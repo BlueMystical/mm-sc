@@ -44,7 +44,9 @@ watchEffect(() => {
 const aboutOpen = ref(false)
 const GITHUB_URL = 'https://github.com/BlueMystical/Courrier-UEX'
 const DONATE_URL = 'https://www.buymeacoffee.com/blue.mystic'
-const LOGO = '/logo-mmsc.png'
+// Versiones livianas del logo (el original pesa ~350 KB): 96 px para la barra, 448 px para el Drawer
+const LOGO_SM = '/logo-mmsc-sm.webp'
+const LOGO = '/logo-mmsc-md.webp'
 
 // Explorar es público; el resto solo existe para usuarios con sesión
 const items = computed(() => [
@@ -76,7 +78,7 @@ const userItems = computed(() => [
   <Menubar :model="items" class="topbar">
     <template #start>
       <button type="button" class="brand" :aria-label="t('about.open')" @click="aboutOpen = true">
-        <img :src="LOGO" alt="" class="logo" width="32" height="32" />
+        <img :src="LOGO_SM" alt="" class="logo" width="32" height="32" />
         <span>{{ t('app.name') }}</span>
       </button>
     </template>

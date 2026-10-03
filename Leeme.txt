@@ -1,8 +1,7 @@
-App en Discord:
-https://discord.com/developers/applications/1555322570855940167/information
-Client information
-Client ID:  1555322570855940167
-Client Secret: a4dMkvo5hm2vj-maZCVF74UsSpEa6vx2
+Panel de la app en Discord (OAuth2 → Client ID / Client Secret):
+https://discord.com/developers/applications
 
-Turso DB:
-https://app.turso.tech/bluemystic/databases/mine-market-sc/data
+Base de datos Turso:
+https://app.turso.tech/
+
+Las credenciales NO van en este archivo: usa server/.env (local) o las variables de entorno de Render.
