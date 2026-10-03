@@ -1,0 +1,8 @@
+App en Discord:
+https://discord.com/developers/applications/1555322570855940167/information
+Client information
+Client ID:  1555322570855940167
+Client Secret: a4dMkvo5hm2vj-maZCVF74UsSpEa6vx2
+
+Turso DB:
+https://app.turso.tech/bluemystic/databases/mine-market-sc/data

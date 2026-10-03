@@ -1,0 +1,42 @@
+/* Tipografía y fondo globales */
+:root {
+  --font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Inter Variable', system-ui, sans-serif;
+
+  --page-bg: #f3f6f9;
+  --rule: rgb(15 23 42 / 0.06);
+  --rule-step: 28px;
+}
+:root.app-dark {
+  --page-bg: #0a0e13;
+  --rule: rgb(255 255 255 / 0.045);
+}
+
+html { font-family: var(--font-body); }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  color: var(--p-text-color);
+  background-color: var(--page-bg);
+  /* capa 1: resplandor suave del color primario; capa 2: líneas horizontales */
+  background-image:
+    radial-gradient(60rem 28rem at 50% -8rem, color-mix(in srgb, var(--p-primary-color) 14%, transparent), transparent),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--rule-step) - 1px),
+      var(--rule) calc(var(--rule-step) - 1px),
+      var(--rule) var(--rule-step)
+    );
+  background-repeat: no-repeat, repeat;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+button, input, select, textarea { font-family: inherit; }
+.num { font-variant-numeric: tabular-nums; }
