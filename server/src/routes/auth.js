@@ -9,6 +9,19 @@ const router = Router()
 const isProd = process.env.NODE_ENV === 'production'
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
+// Registra por qué Discord rechazó una llamada (sin datos sensibles) para poder diagnosticar en producción
+async function discordFail(res, step) {
+  const body = await res.text().catch(() => '')
+  console.error(`[discord ${step}] HTTP ${res.status}`, {
+    contentType: res.headers.get('content-type'),
+    retryAfter: res.headers.get('retry-after'),
+    rateLimitScope: res.headers.get('x-ratelimit-scope'),
+    cfRay: res.headers.get('cf-ray'),
+    body: body.slice(0, 300)
+  })
+  return new Error(`Discord ${step}: ${res.status}`)
+}
+
 // 1) Redirige al usuario a Discord
 router.get('/discord', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex')
@@ -45,13 +58,13 @@ router.get('/discord/callback', async (req, res) => {
         redirect_uri: process.env.DISCORD_REDIRECT_URI
       })
     })
-    if (!tokenRes.ok) throw new Error(`Discord token: ${tokenRes.status}`)
+    if (!tokenRes.ok) throw await discordFail(tokenRes, 'token')
     const { access_token } = await tokenRes.json()
 
     const meRes = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${access_token}` }
     })
-    if (!meRes.ok) throw new Error(`Discord /users/@me: ${meRes.status}`)
+    if (!meRes.ok) throw await discordFail(meRes, '/users/@me')
     const me = await meRes.json()
 
     const avatar = me.avatar
