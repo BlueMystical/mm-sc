@@ -1,0 +1,12 @@
+name = "mm-sc-discord"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+# Keep-alive: visita KEEPALIVE_URL cada 10 minutos para que Render no apague el servicio
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+KEEPALIVE_URL = "https://mm-sc.onrender.com/healthz"
+
+# Secreto (no va aquí): npx wrangler secret put PROXY_KEY

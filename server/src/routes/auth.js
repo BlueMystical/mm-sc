@@ -9,6 +9,11 @@ const router = Router()
 const isProd = process.env.NODE_ENV === 'production'
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
+// Llamadas servidor→Discord. Si Discord bloquea la IP del hosting (429 de Cloudflare),
+// se pueden enviar por un proxy propio: DISCORD_API_BASE + DISCORD_PROXY_KEY.
+const DISCORD_API = (process.env.DISCORD_API_BASE || 'https://discord.com/api').replace(/\/$/, '')
+const proxyAuth = process.env.DISCORD_PROXY_KEY ? { 'x-proxy-key': process.env.DISCORD_PROXY_KEY } : {}
+
 // Registra por qué Discord rechazó una llamada (sin datos sensibles) para poder diagnosticar en producción
 async function discordFail(res, step) {
   const body = await res.text().catch(() => '')
@@ -47,9 +52,10 @@ router.get('/discord/callback', async (req, res) => {
   res.clearCookie('oauth_state')
 
   try {
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+    const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: AbortSignal.timeout(15000),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...proxyAuth },
       body: new URLSearchParams({
         client_id: process.env.DISCORD_CLIENT_ID,
         client_secret: process.env.DISCORD_CLIENT_SECRET,
@@ -61,8 +67,9 @@ router.get('/discord/callback', async (req, res) => {
     if (!tokenRes.ok) throw await discordFail(tokenRes, 'token')
     const { access_token } = await tokenRes.json()
 
-    const meRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: `Bearer ${access_token}` }
+    const meRes = await fetch(`${DISCORD_API}/users/@me`, {
+      signal: AbortSignal.timeout(15000),
+      headers: { Authorization: `Bearer ${access_token}`, ...proxyAuth }
     })
     if (!meRes.ok) throw await discordFail(meRes, '/users/@me')
     const me = await meRes.json()
