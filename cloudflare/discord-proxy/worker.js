@@ -29,7 +29,11 @@ export default {
 
     const key = request.headers.get('x-proxy-key') ?? ''
     if (!env.PROXY_KEY || !safeEqual(key, env.PROXY_KEY)) {
-      return new Response('forbidden', { status: 403 })
+      // Diagnóstico temporal (solo con DEBUG_AUTH=1): longitudes, nunca el valor de la clave
+      const why = env.DEBUG_AUTH === '1'
+        ? ` (secret ${env.PROXY_KEY ? `set, length ${env.PROXY_KEY.length}` : 'MISSING'}; received length ${key.length})`
+        : ''
+      return new Response(`forbidden${why}`, { status: 403 })
     }
     if (!ROUTES.has(`${request.method} ${url.pathname}`)) {
       return new Response('not found', { status: 404 })

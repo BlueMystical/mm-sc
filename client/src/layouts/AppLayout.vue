@@ -12,6 +12,7 @@ import Drawer from 'primevue/drawer'
 import { useAuthStore } from '@/stores/auth.js'
 import { LOCALES } from '@/i18n.js'
 import { errorText } from '@/api.js'
+import StandingBanner from '@/components/StandingBanner.vue'
 import { getCookie, setCookie } from '@/cookies.js'
 
 const auth = useAuthStore()
@@ -118,6 +119,7 @@ const userItems = computed(() => [
         <Button :label="t('common.retry')" icon="pi pi-refresh" size="small" severity="secondary" @click="auth.retry()" />
       </div>
     </Message>
+    <StandingBanner />
     <slot />
   </main>
 

@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit'
 import { db } from '../db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getCommodities } from '../services/uex.js'
+import { requireStanding } from '../middleware/standing.js'
+import { STANDING, addStrike, applyPenaltyCheck } from '../services/standing.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -24,7 +26,7 @@ const createSchema = z.object({
 })
 
 // Crear pedido. Una sola sentencia atómica: valida disponibilidad y toma el precio actual
-router.post('/', createLimiter, async (req, res) => {
+router.post('/', requireStanding('create_order'), createLimiter, async (req, res) => {
   const parsed = createSchema.safeParse(req.body)
   if (!parsed.success) {
     return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
@@ -41,13 +43,15 @@ router.post('/', createLimiter, async (req, res) => {
             AND i.visibility IN ('public', 'unlisted')
             AND i.user_id != ?
             AND l.stock >= ?
+            AND NOT EXISTS (SELECT 1 FROM users s WHERE s.user_id = i.user_id
+                            AND (s.banned_at IS NOT NULL OR s.restricted_until > unixepoch()))
           RETURNING *`,
     args: [req.userId, amount, message ?? null, line_id, req.userId, amount]
   })
   if (!r.rows[0]) {
     return res.status(409).json({
       error: 'line_not_available',
-      message: 'The line does not exist, is unavailable, has insufficient stock, or is yours.'
+      message: 'The line does not exist, is unavailable, has insufficient stock, is yours, or its seller is restricted.'
     })
   }
   res.status(201).json({ ...r.rows[0] })
@@ -138,6 +142,8 @@ async function changeStatus(tx, orderId, userId, next) {
       sql: 'UPDATE inventory_lines SET stock = stock + ? WHERE line_id = ?',
       args: [order.amount, order.line_id]
     })
+    // Cancelar un pedido ya aceptado deja un strike (si el rol está en la lista)
+    if (STANDING.STRIKE_ON_ACCEPTED_CANCEL.includes(role)) await addStrike(tx, userId)
   }
 
   const u = await tx.execute({
@@ -206,6 +212,8 @@ async function createReview(tx, orderId, userId, { rating, comment }) {
       sql: 'UPDATE users SET reputation = reputation + ? WHERE user_id = ?',
       args: [score, revieweeId]
     })
+    // Una reseña negativa puede llevar al reseñado bajo el umbral de restricción
+    if (score < 0) await applyPenaltyCheck(tx, revieweeId)
   }
   return { review: { ...ins.rows[0] } }
 }

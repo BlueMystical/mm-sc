@@ -5,9 +5,17 @@ import { z } from 'zod'
 import { db } from '../db/client.js'
 import { requireAuth } from '../middleware/auth.js'
 import linesRoutes from './lines.js'
+import { requireStanding } from '../middleware/standing.js'
 
 const router = Router()
 router.use(requireAuth)
+
+// Un usuario suspendido no puede crear ni editar inventarios ni líneas (sí consultarlos o borrarlos)
+router.use((req, res, next) =>
+  req.method === 'GET' || req.method === 'DELETE'
+    ? next()
+    : requireStanding('manage_inventory')(req, res, next))
+
 router.use('/:id/lines', linesRoutes)
 
 const inventorySchema = z.object({

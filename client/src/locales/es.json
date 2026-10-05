@@ -95,7 +95,10 @@
     "forbidden": "No puedes realizar esta acción.",
     "order_not_completed": "Solo puedes calificar pedidos completados.",
     "already_reviewed": "Ya calificaste este pedido.",
-    "unknown_error": "Ocurrió un error inesperado."
+    "unknown_error": "Ocurrió un error inesperado.",
+    "account_restricted": "Tu cuenta está restringida y no puede hacer esto por ahora.",
+    "account_suspended": "Tu cuenta está suspendida.",
+    "probation_limit": "Alcanzaste el límite de pedidos activos de las cuentas en período de prueba. Termina o cancela uno primero."
   },
   "inventory": {
     "notFoundTitle": "Inventario no encontrado",
@@ -303,5 +306,13 @@
     "hint": "Las calificaciones no se pueden cambiar después.",
     "send": "Enviar calificación",
     "thanks": "Gracias por tu calificación"
+  },
+  "standing": {
+    "probation": "Tu cuenta está en período de prueba por tu reputación reciente. Hasta que mejore, puedes tener hasta {max} pedidos activos como comprador.",
+    "restricted": "Tu cuenta está restringida hasta el {date}: no puedes hacer nuevos pedidos como comprador y tus inventarios no aparecen en Explorar. Puedes seguir gestionando tus pedidos existentes.",
+    "suspended": "Tu cuenta está suspendida. No puedes crear pedidos ni inventarios. Contacta a los administradores por Discord para apelar.",
+    "reason": "Motivo: {reason}",
+    "sellerRestricted": "Este vendedor está restringido y no puede recibir nuevos pedidos.",
+    "youRestricted": "Tu cuenta está restringida: no puedes hacer pedidos por ahora."
   }
 }

@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { db } from '../db/client.js'
 import { getCommodities } from '../services/uex.js'
 import { z } from 'zod'
+import { getStanding } from '../services/standing.js'
 
 const router = Router()
 
@@ -27,7 +28,8 @@ router.get('/inventories/:token', async (req, res) => {
         sql: `SELECT i.inventory_id, i.share_token, i.title, i.description, i.location,
                  i.visibility, i.image_url, i.updated_at,
                  u.user_id AS seller_id, u.user_name AS seller_name,
-                 u.avatar AS seller_avatar, u.reputation AS seller_reputation
+                 u.avatar AS seller_avatar, u.reputation AS seller_reputation,
+                 u.banned_at, u.restricted_until
           FROM inventories i
           JOIN users u ON u.user_id = i.user_id
           WHERE i.share_token = ? AND i.visibility IN ('unlisted', 'public')`,
@@ -44,8 +46,14 @@ router.get('/inventories/:token', async (req, res) => {
     })
     const names = await getCommodities().catch(() => new Map())
 
+    // No se exponen las fechas de sanción, solo si el vendedor puede recibir pedidos
+    const { banned_at, restricted_until, ...inventory } = inv.rows[0]
+    const sellerRestricted = banned_at != null ||
+        (restricted_until != null && Number(restricted_until) > Math.floor(Date.now() / 1000))
+
     res.json({
-        ...inv.rows[0],
+        ...inventory,
+        seller_restricted: sellerRestricted,
         lines: lines.rows.map(l => ({ ...l, item_name: names.get(l.item_id)?.name ?? null }))
     })
 })
@@ -80,7 +88,12 @@ router.get('/explore', async (req, res) => {
     }
     const q = parsed.data
 
-    const where = ["i.visibility = 'public'", 'l.is_visible = 1', 'l.stock > 0']
+    const where = [
+        "i.visibility = 'public'", 'l.is_visible = 1', 'l.stock > 0',
+        // Vendedores suspendidos o restringidos no aparecen en Explore
+        'u.banned_at IS NULL',
+        '(u.restricted_until IS NULL OR u.restricted_until <= unixepoch())'
+    ]
     const args = []
 
     if (q.item_id) {
@@ -137,7 +150,7 @@ router.get('/users/:id', async (req, res) => {
     })
     if (!u.rows[0]) return res.status(404).json({ error: 'not_found' })
 
-    const [ratings, orders, recent] = await Promise.all([
+    const [ratings, orders, recent, standing] = await Promise.all([
         db.execute({
             sql: `SELECT COALESCE(SUM(rating = 1), 0)  AS positive,
                    COALESCE(SUM(rating = 0), 0)  AS neutral,
@@ -161,11 +174,13 @@ router.get('/users/:id', async (req, res) => {
             ORDER BY r.created_at DESC
             LIMIT 20`,
             args: [id]
-        })
+        }),
+        getStanding(id)
     ])
 
     res.json({
         ...u.rows[0],
+        standing: { level: standing?.level ?? 'normal' },
         ratings: {
             positive: Number(ratings.rows[0].positive),
             neutral: Number(ratings.rows[0].neutral),

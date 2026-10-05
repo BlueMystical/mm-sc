@@ -95,7 +95,10 @@
     "forbidden": "You can't perform this action.",
     "order_not_completed": "You can only rate completed orders.",
     "already_reviewed": "You already rated this order.",
-    "unknown_error": "Something went wrong."
+    "unknown_error": "Something went wrong.",
+    "account_restricted": "Your account is restricted and can't do this right now.",
+    "account_suspended": "Your account is suspended.",
+    "probation_limit": "You've reached the active-order limit for accounts on probation. Finish or cancel an order first."
   },
   "inventory": {
     "notFoundTitle": "Inventory not found",
@@ -303,5 +306,13 @@
     "hint": "Ratings can't be changed afterwards.",
     "send": "Submit rating",
     "thanks": "Thanks for your rating"
+  },
+  "standing": {
+    "probation": "Your account is on probation because of your recent reputation. Until it improves, you can have up to {max} active orders as a buyer.",
+    "restricted": "Your account is restricted until {date}: you can't place new orders as a buyer and your inventories are hidden from Explore. You can still handle your existing orders.",
+    "suspended": "Your account is suspended. You can't create orders or inventories. Contact the administrators on Discord to appeal.",
+    "reason": "Reason: {reason}",
+    "sellerRestricted": "This seller is currently restricted and can't receive new orders.",
+    "youRestricted": "Your account is restricted: you can't place new orders right now."
   }
 }

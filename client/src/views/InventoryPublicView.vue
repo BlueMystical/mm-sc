@@ -50,6 +50,11 @@ watch(() => props.token, load, { immediate: true })
 
 const isOwner = computed(() => !!auth.user && !!inv.value && auth.user.user_id === inv.value.seller_id)
 
+// Pedidos bloqueados: el vendedor está restringido, o yo (comprador) lo estoy
+const myLevel = computed(() => auth.user?.standing?.level ?? 'normal')
+const iAmBlocked = computed(() => myLevel.value === 'restricted' || myLevel.value === 'suspended')
+const ordersBlocked = computed(() => !!inv.value?.seller_restricted || iAmBlocked.value)
+
 // --- Pedidos ---
 const orderVisible = ref(false)
 const orderLine = ref(null)
@@ -159,12 +164,15 @@ async function copyLink() {
               />
               <Button
                 v-else :label="t('inventory.order')" icon="pi pi-shopping-cart"
-                :disabled="line.stock === 0" @click="startOrder(line)"
+                :disabled="line.stock === 0 || ordersBlocked" @click="startOrder(line)"
               />
             </template>
           </div>
         </li>
       </ul>
+
+      <p v-if="!isOwner && inv.seller_restricted" class="muted note"><i class="pi pi-ban" /> {{ t('standing.sellerRestricted') }}</p>
+      <p v-else-if="!isOwner && iAmBlocked" class="muted note"><i class="pi pi-ban" /> {{ t('standing.youRestricted') }}</p>
 
       <p v-if="!isOwner && inv.lines.length" class="muted note"><i class="pi pi-info-circle" /> {{ t('inventory.contactNote') }}</p>
     </section>

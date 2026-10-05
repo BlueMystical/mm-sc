@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { db } from '../db/client.js'
 import { requireAuth } from '../middleware/auth.js'
+import { getStanding, RULES } from '../services/standing.js'
 
 const router = Router()
 const isProd = process.env.NODE_ENV === 'production'
@@ -108,11 +109,19 @@ router.get('/me', requireAuth, async (req, res) => {
   })
   const u = r.rows[0]
   if (!u) return res.status(401).json({ error: 'unauthorized' })
+  const s = await getStanding(req.userId)
   res.json({
     user_id: u.user_id,
     user_name: u.user_name,
     avatar: u.avatar,
-    reputation: u.reputation
+    reputation: u.reputation,
+    standing: {
+      level: s.level,
+      strikes: s.strikes,
+      restricted_until: s.restricted_until,
+      ban_reason: s.ban_reason,
+      max_active_orders: RULES[s.level].create_order?.maxActive ?? null
+    }
   })
 })
 

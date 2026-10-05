@@ -30,6 +30,11 @@ export const useAuthStore = defineStore('auth', () => {
     return init()
   }
 
+  // Vuelve a pedir el usuario (y su standing) sin tocar el estado de error
+  async function refreshUser() {
+    try { user.value = await api.get('/auth/me') } catch { /* se queda con lo que había */ }
+  }
+
   // Login con Discord: redirección completa. returnTo = ruta a la que volver después.
   function login(returnTo) {
     if (returnTo) sessionStorage.setItem(RETURN_KEY, returnTo)
@@ -41,5 +46,5 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, ready, error, init, retry, login, logout }
+  return { user, ready, error, init, retry, refreshUser, login, logout }
 })

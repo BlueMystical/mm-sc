@@ -29,30 +29,21 @@ const loading = ref(true)
 const role = ref('all')       // all | buyer | seller
 const status = ref('all')     // all | pending | accepted | ...
 const busy = ref(new Set())
-const expanded = ref([])      // order_id de los paneles abiertos
-const lastStatus = new Map()  // order_id -> último estado visto
+const expanded = ref([])      // order_id de los paneles abiertos (todos colapsados al inicio)
 let requestId = 0
 
-// Abiertos por defecto: los que aún requieren atención
-const OPEN_BY_DEFAULT = ['pending', 'accepted']
+// --- Datos del usuario actual ---
+const me = computed(() => auth.user?.user_id)
+// Defensa en profundidad: la seguridad real está en el backend, esto solo evita
+// mostrar pedidos ajenos si el servidor llegara a enviarlos por error.
+const isMine = o => !!me.value && (o.seller_id === me.value || o.buyer_id === me.value)
 
-// Más recientes primero
+// Solo mis pedidos, más recientes primero
 const sorted = computed(() =>
-  [...orders.value].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  orders.value
+    .filter(isMine)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 )
-
-// Solo aplica el estado por defecto a pedidos nuevos o que cambiaron de estado,
-// así no se pisa lo que el usuario abrió o cerró a mano.
-function syncExpanded(list) {
-  const open = new Set(expanded.value)
-  for (const o of list) {
-    if (lastStatus.get(o.order_id) === o.status) continue
-    lastStatus.set(o.order_id, o.status)
-    if (OPEN_BY_DEFAULT.includes(o.status)) open.add(o.order_id)
-    else open.delete(o.order_id)
-  }
-  expanded.value = [...open]
-}
 
 const roleOptions = computed(() => [
   { value: 'all', label: t('orders.tabs.all') },
@@ -74,7 +65,10 @@ async function load() {
     const data = await api.get('/orders', query)
     if (id !== requestId) return
     orders.value = data
-    syncExpanded(data)
+    auth.refreshUser()   // strikes y reseñas pueden haber cambiado el standing
+    // Descarta paneles abiertos de pedidos que ya no están en la lista
+    const ids = new Set(data.map(o => o.order_id))
+    expanded.value = expanded.value.filter(id => ids.has(id))
   } catch (err) {
     if (id !== requestId) return
     toast.add({ severity: 'error', summary: t('orders.loadError'), detail: errorMessage(err), life: 5000 })
@@ -86,7 +80,6 @@ onMounted(load)
 watch([role, status], load)
 
 // --- Datos derivados de cada pedido ---
-const me = computed(() => auth.user?.user_id)
 const roleOf = o => (o.seller_id === me.value ? 'seller' : 'buyer')
 const itemName = o => o.item_name ?? t('card.unknownItem', { id: o.item_id })
 
@@ -176,11 +169,11 @@ const hasFilters = computed(() => role.value !== 'all' || status.value !== 'all'
     <Select v-model="status" :options="statusOptions" optionLabel="label" optionValue="value" :aria-label="t('orders.statusAll')" class="status" />
   </div>
 
-  <div v-if="loading && !orders.length" class="list" aria-hidden="true">
+  <div v-if="loading && !sorted.length" class="list" aria-hidden="true">
     <Skeleton v-for="n in 3" :key="n" height="9rem" borderRadius="14px" />
   </div>
 
-  <div v-else-if="!orders.length" class="empty">
+  <div v-else-if="!sorted.length" class="empty">
     <i class="pi pi-shopping-cart" aria-hidden="true" />
     <p>{{ hasFilters ? t('orders.emptyFiltered') : t('orders.empty') }}</p>
   </div>

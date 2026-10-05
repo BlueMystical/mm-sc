@@ -4,4 +4,13 @@ https://discord.com/developers/applications
 Base de datos Turso:
 https://app.turso.tech/
 
-Las credenciales NO van en este archivo: usa server/.env (local) o las variables de entorno de Render.
+======================================================
+Para banear usás el script server/scripts/standing.js, identificando al usuario por discord_id:
+
+node --env-file=.env scripts/standing.js status <discord_id>
+node --env-file=.env scripts/standing.js ban <discord_id> <motivo>
+node --env-file=.env scripts/standing.js unban <discord_id>
+
+Decisiones que podés cambiar en standing.js
+Todo está en el objeto STANDING: los umbrales (-3 y -5), los 14 días, el límite de 2 órdenes y la evidencia mínima de 3. STRIKE_ON_ACCEPTED_CANCEL: ['seller', 'buyer'] define quién recibe strike; si cancelar de común acuerdo te parece demasiado duro para el comprador, dejalo en ['seller'].
+======================================================
