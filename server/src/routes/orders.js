@@ -11,6 +11,10 @@ import { STANDING, addStrike, applyPenaltyCheck } from '../services/standing.js'
 const router = Router()
 router.use(requireAuth)
 
+//#region Methods for managing orders (create, edit, cancel, review) are protected by requireStanding('create_order') middleware.
+
+const SCORE = { positive: 1, neutral: 0, negative: -1 }
+
 const createLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 20, // pedidos por hora y usuario
@@ -25,88 +29,6 @@ const createSchema = z.object({
   message: z.string().trim().max(500).nullish()
 })
 
-// Crear pedido. Una sola sentencia atómica: valida disponibilidad y toma el precio actual
-router.post('/', requireStanding('create_order'), createLimiter, async (req, res) => {
-  const parsed = createSchema.safeParse(req.body)
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
-  }
-  const { line_id, amount, message } = parsed.data
-
-  const r = await db.execute({
-    sql: `INSERT INTO orders (buyer_id, seller_id, line_id, amount, unit_price, message)
-          SELECT ?, i.user_id, l.line_id, ?, l.price, ?
-          FROM inventory_lines l
-          JOIN inventories i ON i.inventory_id = l.inventory_id
-          WHERE l.line_id = ?
-            AND l.is_visible = 1
-            AND i.visibility IN ('public', 'unlisted')
-            AND i.user_id != ?
-            AND l.stock >= ?
-            AND NOT EXISTS (SELECT 1 FROM users s WHERE s.user_id = i.user_id
-                            AND (s.banned_at IS NOT NULL OR s.restricted_until > unixepoch()))
-          RETURNING *`,
-    args: [req.userId, amount, message ?? null, line_id, req.userId, amount]
-  })
-  if (!r.rows[0]) {
-    return res.status(409).json({
-      error: 'line_not_available',
-      message: 'The line does not exist, is unavailable, has insufficient stock, is yours, or its seller is restricted.'
-    })
-  }
-  res.status(201).json({ ...r.rows[0] })
-})
-
-const listSchema = z.object({
-  role: z.enum(['buyer', 'seller']).optional(),
-  status: z.enum(['pending', 'accepted', 'rejected', 'completed', 'cancelled']).optional()
-})
-
-// Mis pedidos (como comprador, vendedor o ambos)
-router.get('/', async (req, res) => {
-  const parsed = listSchema.safeParse(req.query)
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'invalid_query', details: parsed.error.issues })
-  }
-  const { role, status } = parsed.data
-
-  const where = []
-  const args = []
-  if (role === 'buyer') {
-    where.push('o.buyer_id = ?'); args.push(req.userId)
-  } else if (role === 'seller') {
-    where.push('o.seller_id = ?'); args.push(req.userId)
-  } else {
-    where.push('(o.buyer_id = ? OR o.seller_id = ?)'); args.push(req.userId, req.userId)
-  }
-  if (status) { where.push('o.status = ?'); args.push(status) }
-
-  const r = await db.execute({
-    sql: `SELECT o.order_id, o.status, o.amount, o.unit_price, o.message,
-                 o.created_at, o.updated_at, o.buyer_id, o.seller_id,
-                 l.line_id, l.item_id, i.inventory_id, i.title AS inventory_title,
-                 b.user_name AS buyer_name, b.avatar AS buyer_avatar,
-                 b.reputation AS buyer_reputation,
-                 s.user_name AS seller_name, s.avatar AS seller_avatar,
-                 s.reputation AS seller_reputation,
-                 CASE WHEN o.status IN ('accepted', 'completed') THEN b.discord_id END AS buyer_discord_id,
-                 CASE WHEN o.status IN ('accepted', 'completed') THEN s.discord_id END AS seller_discord_id,
-                 EXISTS (SELECT 1 FROM reviews rv
-                         WHERE rv.order_id = o.order_id AND rv.reviewer_id = ?) AS reviewed
-          FROM orders o
-          JOIN inventory_lines l ON l.line_id = o.line_id
-          JOIN inventories i ON i.inventory_id = l.inventory_id
-          JOIN users b ON b.user_id = o.buyer_id
-          JOIN users s ON s.user_id = o.seller_id
-          WHERE ${where.join(' AND ')}
-          ORDER BY o.updated_at DESC
-          LIMIT 100`,
-    args: [req.userId, ...args]
-  })
-  const names = await getCommodities().catch(() => new Map())
-  res.json(r.rows.map(o => ({ ...o, item_name: names.get(o.item_id)?.name ?? null })))
-})
-
 // Quién puede hacer cada cambio de estado
 const TRANSITIONS = {
   pending: { accepted: 'seller', rejected: 'seller', cancelled: 'buyer' },
@@ -116,9 +38,20 @@ const statusSchema = z.object({
   status: z.enum(['accepted', 'rejected', 'completed', 'cancelled'])
 })
 
+const listSchema = z.object({
+  role: z.enum(['buyer', 'seller']).optional(),
+  status: z.enum(['pending', 'accepted', 'rejected', 'completed', 'cancelled']).optional()
+})
+
+const reviewSchema = z.object({
+  rating: z.enum(['positive', 'neutral', 'negative']),
+  comment: z.string().trim().max(500).nullish()
+})
+
+
 async function changeStatus(tx, orderId, userId, next) {
   const found = await tx.execute({
-    sql: 'SELECT * FROM orders WHERE order_id = ?',
+    sql: 'SELECT * FROM active_orders WHERE order_id = ?',
     args: [orderId]
   })
   const order = found.rows[0]
@@ -154,42 +87,9 @@ async function changeStatus(tx, orderId, userId, next) {
   if (!u.rows[0]) return { error: 'invalid_transition', code: 409 } // otro cambio se coló
   return { order: { ...u.rows[0] } }
 }
-
-// Cambiar el estado de un pedido
-router.patch('/:id/status', async (req, res) => {
-  const id = Number(req.params.id)
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid_id' })
-  const parsed = statusSchema.safeParse(req.body)
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
-  }
-
-  let result
-  const tx = await db.transaction('write')
-  try {
-    result = await changeStatus(tx, id, req.userId, parsed.data.status)
-    if (result.error) await tx.rollback()
-    else await tx.commit()
-  } catch (err) {
-    await tx.rollback().catch(() => { })
-    throw err
-  } finally {
-    tx.close()
-  }
-
-  if (result.error) return res.status(result.code).json({ error: result.error })
-  res.json(result.order)
-})
-
-const reviewSchema = z.object({
-  rating: z.enum(['positive', 'neutral', 'negative']),
-  comment: z.string().trim().max(500).nullish()
-})
-const SCORE = { positive: 1, neutral: 0, negative: -1 }
-
 async function createReview(tx, orderId, userId, { rating, comment }) {
   const found = await tx.execute({
-    sql: 'SELECT * FROM orders WHERE order_id = ?',
+    sql: 'SELECT * FROM active_orders WHERE order_id = ?',
     args: [orderId]
   })
   const order = found.rows[0]
@@ -217,6 +117,111 @@ async function createReview(tx, orderId, userId, { rating, comment }) {
   }
   return { review: { ...ins.rows[0] } }
 }
+
+//#endregion
+
+// Crear pedido. Una sola sentencia atómica: valida disponibilidad y toma el precio actual
+router.post('/', requireStanding('create_order'), createLimiter, async (req, res) => {
+  const parsed = createSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+  const { line_id, amount, message } = parsed.data
+
+  const r = await db.execute({
+    sql: `INSERT INTO orders (buyer_id, seller_id, line_id, amount, unit_price, message)
+          SELECT ?, i.user_id, l.line_id, ?, l.price, ?
+          FROM active_lines l
+          JOIN active_inventories i ON i.inventory_id = l.inventory_id
+          WHERE l.line_id = ?
+            AND l.is_visible = 1
+            AND i.visibility IN ('public', 'unlisted')
+            AND i.user_id != ?
+            AND l.stock >= ?
+            AND NOT EXISTS (SELECT 1 FROM users s WHERE s.user_id = i.user_id
+                            AND s.restricted_until > unixepoch())
+          RETURNING *`,
+    args: [req.userId, amount, message ?? null, line_id, req.userId, amount]
+  })
+  if (!r.rows[0]) {
+    return res.status(409).json({
+      error: 'line_not_available',
+      message: 'The line does not exist, is unavailable, has insufficient stock, is yours, or its seller is restricted.'
+    })
+  }
+  res.status(201).json({ ...r.rows[0] })
+})
+
+// Mis pedidos (como comprador, vendedor o ambos)
+router.get('/', async (req, res) => {
+  const parsed = listSchema.safeParse(req.query)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_query', details: parsed.error.issues })
+  }
+  const { role, status } = parsed.data
+
+  const where = []
+  const args = []
+  if (role === 'buyer') {
+    where.push('o.buyer_id = ?'); args.push(req.userId)
+  } else if (role === 'seller') {
+    where.push('o.seller_id = ?'); args.push(req.userId)
+  } else {
+    where.push('(o.buyer_id = ? OR o.seller_id = ?)'); args.push(req.userId, req.userId)
+  }
+  if (status) { where.push('o.status = ?'); args.push(status) }
+
+  const r = await db.execute({
+    sql: `SELECT o.order_id, o.status, o.amount, o.unit_price, o.message,
+                 o.created_at, o.updated_at, o.buyer_id, o.seller_id,
+                 l.line_id, l.item_id, i.inventory_id, i.title AS inventory_title,
+                 b.user_name AS buyer_name, b.avatar AS buyer_avatar,
+                 b.reputation AS buyer_reputation,
+                 s.user_name AS seller_name, s.avatar AS seller_avatar,
+                 s.reputation AS seller_reputation,
+                 CASE WHEN o.status IN ('accepted', 'completed') THEN b.discord_id END AS buyer_discord_id,
+                 CASE WHEN o.status IN ('accepted', 'completed') THEN s.discord_id END AS seller_discord_id,
+                 EXISTS (SELECT 1 FROM reviews rv
+                         WHERE rv.order_id = o.order_id AND rv.reviewer_id = ?) AS reviewed
+        FROM active_orders o
+          JOIN active_lines l ON l.line_id = o.line_id
+          JOIN active_inventories i ON i.inventory_id = l.inventory_id
+          JOIN users b ON b.user_id = o.buyer_id
+          JOIN users s ON s.user_id = o.seller_id
+          WHERE ${where.join(' AND ')}
+          ORDER BY o.updated_at DESC
+          LIMIT 100`,
+    args: [req.userId, ...args]
+  })
+  const names = await getCommodities().catch(() => new Map())
+  res.json(r.rows.map(o => ({ ...o, item_name: names.get(o.item_id)?.name ?? null })))
+})
+
+// Cambiar el estado de un pedido
+router.patch('/:id/status', async (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid_id' })
+  const parsed = statusSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.issues })
+  }
+
+  let result
+  const tx = await db.transaction('write')
+  try {
+    result = await changeStatus(tx, id, req.userId, parsed.data.status)
+    if (result.error) await tx.rollback()
+    else await tx.commit()
+  } catch (err) {
+    await tx.rollback().catch(() => { })
+    throw err
+  } finally {
+    tx.close()
+  }
+
+  if (result.error) return res.status(result.code).json({ error: result.error })
+  res.json(result.order)
+})
 
 // Calificar a la otra parte de un pedido completado
 router.post('/:id/review', async (req, res) => {

@@ -6,6 +6,8 @@ import { getCommodities } from '../services/uex.js'
 
 const router = Router({ mergeParams: true })
 
+//#region Methods for managing lines (create, edit, delete) are protected by requireStanding('manage_inventory') middleware.
+
 const lineSchema = z.object({
   item_id: z.number().int().positive(),
   quality: z.number().int().min(0).max(1000).nullish(),
@@ -14,21 +16,6 @@ const lineSchema = z.object({
   is_visible: z.boolean().optional()
 })
 const updateSchema = lineSchema.partial()
-
-// Verifica que el inventario del path sea del usuario autenticado
-router.use(async (req, res, next) => {
-  const inventoryId = Number(req.params.id)
-  if (!Number.isInteger(inventoryId) || inventoryId <= 0) {
-    return res.status(400).json({ error: 'invalid_id' })
-  }
-  const r = await db.execute({
-    sql: 'SELECT 1 FROM inventories WHERE inventory_id = ? AND user_id = ?',
-    args: [inventoryId, req.userId]
-  })
-  if (!r.rows[0]) return res.status(404).json({ error: 'not_found' })
-  req.inventoryId = inventoryId
-  next()
-})
 
 function parseLineId(req, res) {
   const id = Number(req.params.lineId)
@@ -67,10 +54,27 @@ const touchInventory = inventoryId =>
     args: [inventoryId]
   })
 
+//#endregion
+
+// Verifica que el inventario del path sea del usuario autenticado y esté activo
+router.use(async (req, res, next) => {
+  const inventoryId = Number(req.params.id)
+  if (!Number.isInteger(inventoryId) || inventoryId <= 0) {
+    return res.status(400).json({ error: 'invalid_id' })
+  }
+  const r = await db.execute({
+    sql: 'SELECT 1 FROM active_inventories WHERE inventory_id = ? AND user_id = ?',
+    args: [inventoryId, req.userId]
+  })
+  if (!r.rows[0]) return res.status(404).json({ error: 'not_found' })
+  req.inventoryId = inventoryId
+  next()
+})
+
 // Listar líneas
 router.get('/', async (req, res) => {
   const r = await db.execute({
-    sql: 'SELECT * FROM inventory_lines WHERE inventory_id = ? ORDER BY line_id',
+    sql: 'SELECT * FROM active_lines WHERE inventory_id = ? ORDER BY line_id',
     args: [req.inventoryId]
   })
   const names = await getCommodities().catch(() => new Map())

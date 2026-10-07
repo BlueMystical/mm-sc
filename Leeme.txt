@@ -1,16 +1,40 @@
-Panel de la app en Discord (OAuth2 → Client ID / Client Secret):
+https://github.com/BlueMystical/mm-sc
+https://mm-sc.onrender.com/
+
+
+https://dashboard.render.com/web/srv-db0if2rncjis739lrug0/logs
 https://discord.com/developers/applications
+
+https://dash.cloudflare.com/1d4be3c1d67dc294d70803964fb9beb0/home
+https://mm-sc-discord.jhollman-chacon.workers.dev
 
 Base de datos Turso:
 https://app.turso.tech/
+https://app.turso.tech/bluemystic/databases/mine-market-sc
+https://app.turso.tech/bluemystic/databases/mine-market-sc/data
 
 ======================================================
 Para banear usás el script server/scripts/standing.js, identificando al usuario por discord_id:
 
+cd server
 node --env-file=.env scripts/standing.js status <discord_id>
 node --env-file=.env scripts/standing.js ban <discord_id> <motivo>
 node --env-file=.env scripts/standing.js unban <discord_id>
 
 Decisiones que podés cambiar en standing.js
 Todo está en el objeto STANDING: los umbrales (-3 y -5), los 14 días, el límite de 2 órdenes y la evidencia mínima de 3. STRIKE_ON_ACCEPTED_CANCEL: ['seller', 'buyer'] define quién recibe strike; si cancelar de común acuerdo te parece demasiado duro para el comprador, dejalo en ['seller'].
+======================================================
+-- Dar de baja tus inventarios de prueba
+UPDATE inventories
+SET deleted_at = unixepoch(), updated_at = unixepoch()
+WHERE inventory_id IN (1, 2, 3);
+
+-- Restaurar
+UPDATE inventories SET deleted_at = NULL WHERE inventory_id = ?;
+
+-- Ban permanente
+UPDATE users SET banned_at = unixepoch(), ban_reason = ? WHERE user_id = ?;
+
+-- Desbanear
+UPDATE users SET banned_at = NULL, ban_reason = NULL WHERE user_id = ?;
 ======================================================

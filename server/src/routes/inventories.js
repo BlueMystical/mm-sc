@@ -10,6 +10,8 @@ import { requireStanding } from '../middleware/standing.js'
 const router = Router()
 router.use(requireAuth)
 
+//#region Methods for managing inventories (create, edit, delete) and lines are protected by requireStanding('manage_inventory') middleware.
+
 // Un usuario suspendido no puede crear ni editar inventarios ni líneas (sí consultarlos o borrarlos)
 router.use((req, res, next) =>
   req.method === 'GET' || req.method === 'DELETE'
@@ -19,12 +21,12 @@ router.use((req, res, next) =>
 router.use('/:id/lines', linesRoutes)
 
 const inventorySchema = z.object({
-  title: z.string().trim().min(1).max(100),
-  description: z.string().trim().max(1000).nullish(),
-  location: z.string().trim().max(100).nullish(),
-  image_url: z.string().trim().max(500).url()
+  title:        z.string().trim().min(1).max(100),
+  description:  z.string().trim().max(1000).nullish(),
+  location:     z.string().trim().max(100).nullish(),
+  image_url:    z.string().trim().max(500).url()
     .refine(u => u.startsWith('https://'), 'must be an https URL').nullish(),
-  visibility: z.enum(['private', 'unlisted', 'public']).optional()
+  visibility:   z.enum(['private', 'unlisted', 'public']).optional()
 })
 const updateSchema = inventorySchema.partial()
 
@@ -36,6 +38,36 @@ function parseId(req, res) {
   }
   return id
 }
+
+//#endregion  
+
+
+
+// Listar mis inventarios
+router.get('/', async (req, res) => {
+  const r = await db.execute({
+    sql: `SELECT i.*,
+                 (SELECT COUNT(*) FROM active_lines l
+                   WHERE l.inventory_id = i.inventory_id) AS line_count
+          FROM active_inventories  i
+          WHERE i.user_id = ?
+          ORDER BY i.updated_at DESC`,
+    args: [req.userId]
+  })
+  res.json(r.rows.map(row => ({ ...row })))
+})
+
+// Ver uno de mis inventarios
+router.get('/:id', async (req, res) => {
+  const id = parseId(req, res)
+  if (id === null) return
+  const r = await db.execute({
+    sql: 'SELECT * FROM active_inventories WHERE inventory_id = ? AND user_id = ?',
+    args: [id, req.userId]
+  })
+  if (!r.rows[0]) return res.status(404).json({ error: 'not_found' })
+  res.json({ ...r.rows[0] })
+})
 
 // Crear inventario
 router.post('/', async (req, res) => {
@@ -52,32 +84,6 @@ router.post('/', async (req, res) => {
     args: [shareToken, req.userId, title, description ?? null, location ?? null, image_url ?? null, visibility]
   })
   res.status(201).json({ ...r.rows[0] })
-})
-
-// Listar mis inventarios
-router.get('/', async (req, res) => {
-  const r = await db.execute({
-    sql: `SELECT i.*,
-                 (SELECT COUNT(*) FROM inventory_lines l
-                   WHERE l.inventory_id = i.inventory_id) AS line_count
-          FROM inventories i
-          WHERE i.user_id = ?
-          ORDER BY i.updated_at DESC`,
-    args: [req.userId]
-  })
-  res.json(r.rows.map(row => ({ ...row })))
-})
-
-// Ver uno de mis inventarios
-router.get('/:id', async (req, res) => {
-  const id = parseId(req, res)
-  if (id === null) return
-  const r = await db.execute({
-    sql: 'SELECT * FROM inventories WHERE inventory_id = ? AND user_id = ?',
-    args: [id, req.userId]
-  })
-  if (!r.rows[0]) return res.status(404).json({ error: 'not_found' })
-  res.json({ ...r.rows[0] })
 })
 
 // Editar
@@ -97,33 +103,25 @@ router.patch('/:id', async (req, res) => {
 
   const r = await db.execute({
     sql: `UPDATE inventories SET ${sets}, updated_at = unixepoch()
-          WHERE inventory_id = ? AND user_id = ? RETURNING *`,
+          WHERE inventory_id = ? AND user_id = ? AND deleted_at IS NULL RETURNING *`,
     args
   })
   if (!r.rows[0]) return res.status(404).json({ error: 'not_found' })
   res.json({ ...r.rows[0] })
 })
 
-// Eliminar
+// Eliminar (Soft Delete)
 router.delete('/:id', async (req, res) => {
   const id = parseId(req, res)
   if (id === null) return
-  try {
-    const r = await db.execute({
-      sql: 'DELETE FROM inventories WHERE inventory_id = ? AND user_id = ?',
-      args: [id, req.userId]
-    })
-    if (r.rowsAffected === 0) return res.status(404).json({ error: 'not_found' })
-    res.status(204).end()
-  } catch (err) {
-    if (String(err.message).includes('FOREIGN KEY')) {
-      return res.status(409).json({
-        error: 'has_orders',
-        message: 'The inventory has related orders. Make it private instead of deleting it.'
-      })
-    }
-    throw err
-  }
+  
+  const r = await db.execute({
+    sql: 'UPDATE inventories SET deleted_at = unixepoch() WHERE inventory_id = ? AND user_id = ? AND deleted_at IS NULL',
+    args: [id, req.userId]
+  })
+  
+  if (r.rowsAffected === 0) return res.status(404).json({ error: 'not_found' })
+  res.status(204).end()
 })
 
 export default router
