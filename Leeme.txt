@@ -14,6 +14,14 @@ https://app.turso.tech/bluemystic/databases/mine-market-sc
 https://app.turso.tech/bluemystic/databases/mine-market-sc/data
 
 ======================================================
+
+Resumen de la Arquitectura
+Archivo                     Rol en el Sistema       Tipo de Operación       Visibilidad de Datos
+public.js                   Escaparate / Catálogo   Lectura pública         Solo datos públicos y activos
+inventories.js / lines.js   Panel de Administración Escritura / Gestión     Tus propios datos (públicos y privados)
+orders.js                   Caja Registradora / Contratos   TransaccionalHistorial y pedidos propios
+
+======================================================
 Para banear usás el script server/scripts/standing.js, identificando al usuario por discord_id:
 
 cd server
@@ -22,7 +30,9 @@ node --env-file=.env scripts/standing.js ban <discord_id> <motivo>
 node --env-file=.env scripts/standing.js unban <discord_id>
 
 Decisiones que podés cambiar en standing.js
-Todo está en el objeto STANDING: los umbrales (-3 y -5), los 14 días, el límite de 2 órdenes y la evidencia mínima de 3. STRIKE_ON_ACCEPTED_CANCEL: ['seller', 'buyer'] define quién recibe strike; si cancelar de común acuerdo te parece demasiado duro para el comprador, dejalo en ['seller'].
+Todo está en el objeto 
+STANDING:                   los umbrales (-3 y -5), los 14 días, el límite de 2 órdenes y la evidencia mínima de 3. 
+STRIKE_ON_ACCEPTED_CANCEL:  ['seller', 'buyer'] define quién recibe strike; si cancelar de común acuerdo te parece demasiado duro para el comprador, dejalo en ['seller'].
 ======================================================
 -- Dar de baja tus inventarios de prueba
 UPDATE inventories
