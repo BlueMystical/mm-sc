@@ -24,22 +24,24 @@ router.get('/commodities', async (req, res) => {
 
 // Inventario por link compartido (sin login)
 router.get('/inventories/:token', async (req, res) => {
+    // Usamos active_inventories para ignorar los dados de baja y de usuarios baneados
     const inv = await db.execute({
         sql: `SELECT i.inventory_id, i.share_token, i.title, i.description, i.location,
                  i.visibility, i.image_url, i.updated_at,
                  u.user_id AS seller_id, u.user_name AS seller_name,
                  u.avatar AS seller_avatar, u.reputation AS seller_reputation,
                  u.banned_at, u.restricted_until
-          FROM inventories i
+          FROM active_inventories i
           JOIN users u ON u.user_id = i.user_id
           WHERE i.share_token = ? AND i.visibility IN ('unlisted', 'public')`,
         args: [req.params.token]
     })
     if (!inv.rows[0]) return res.status(404).json({ error: 'not_found' })
 
+    // Usamos active_lines para obtener solo las líneas de inventarios activos
     const lines = await db.execute({
         sql: `SELECT line_id, item_id, quality, stock, price
-          FROM inventory_lines
+          FROM active_lines
           WHERE inventory_id = ? AND is_visible = 1
           ORDER BY line_id`,
         args: [inv.rows[0].inventory_id]
@@ -90,8 +92,8 @@ router.get('/explore', async (req, res) => {
 
     const where = [
         "i.visibility = 'public'", 'l.is_visible = 1', 'l.stock > 0',
-        // Vendedores suspendidos o restringidos no aparecen en Explore
-        'u.banned_at IS NULL',
+        // Vendedores restringidos temporalmente no aparecen en Explore
+        // (los baneados y los inventarios borrados ya los filtra active_inventories)
         '(u.restricted_until IS NULL OR u.restricted_until <= unixepoch())'
     ]
     const args = []
@@ -110,9 +112,10 @@ router.get('/explore', async (req, res) => {
         args.push(`%${q.location.replace(/[\\%_]/g, '\\$&')}%`)
     }
 
+    // Se consulta desde active_lines y active_inventories
     const from = `
-    FROM inventory_lines l
-    JOIN inventories i ON i.inventory_id = l.inventory_id
+    FROM active_lines l
+    JOIN active_inventories i ON i.inventory_id = l.inventory_id
     JOIN users u ON u.user_id = i.user_id
     WHERE ${where.join(' AND ')}`
 
@@ -150,25 +153,26 @@ router.get('/users/:id', async (req, res) => {
     })
     if (!u.rows[0]) return res.status(404).json({ error: 'not_found' })
 
+    // Se consulta desde active_reviews y active_orders
     const [ratings, orders, recent, standing] = await Promise.all([
         db.execute({
             sql: `SELECT COALESCE(SUM(rating = 1), 0)  AS positive,
                    COALESCE(SUM(rating = 0), 0)  AS neutral,
                    COALESCE(SUM(rating = -1), 0) AS negative
-            FROM reviews WHERE reviewee_id = ?`,
+            FROM active_reviews WHERE reviewee_id = ?`,
             args: [id]
         }),
         db.execute({
             sql: `SELECT COALESCE(SUM(seller_id = ?), 0) AS sales,
                    COALESCE(SUM(buyer_id = ?), 0)  AS purchases
-            FROM orders
+            FROM active_orders
             WHERE status = 'completed' AND (seller_id = ? OR buyer_id = ?)`,
             args: [id, id, id, id]
         }),
         db.execute({
             sql: `SELECT r.rating, r.comment, r.created_at,
                    rv.user_name AS reviewer_name, rv.avatar AS reviewer_avatar
-            FROM reviews r
+            FROM active_reviews r
             JOIN users rv ON rv.user_id = r.reviewer_id
             WHERE r.reviewee_id = ?
             ORDER BY r.created_at DESC
